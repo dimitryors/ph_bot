@@ -1,0 +1,17 @@
+{application, ph_bot,
+ [{description, "Price house bot"},
+  {vsn, "1.0"},
+  {registered, []},
+  {mod, { ph_bot, []}},
+  {applications,
+   [kernel,
+    stdlib,
+    mochiweb
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {maintainers, []},
+  {licenses, ["Apache 2.0"]},
+  {links, []}
+ ]}.
