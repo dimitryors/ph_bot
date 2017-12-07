@@ -13,7 +13,7 @@
 %% Application callbacks
 -export([start_link/0, start/2, stop/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([request_new_url/1,
+-export([request_page/1,
          request_url/1,
          parse_url/1,
          url_context/1,
@@ -24,6 +24,8 @@
          is_external_link/2,
          trim_subdomains/1,
          fetch_links/2,
+         remove_duplicates/1,
+         save_crawler_results/2,
          test/0,
          time_calc/0
         %  get_start_tags_attributes/3,
@@ -50,11 +52,19 @@ stop(_State) ->
     ok.
 
 %%====================================================================
-%% API user
+%% Local API user
 %%====================================================================
 
-request_new_url(Url) ->
-    gen_server:cast(?MODULE, {fetch_new_url, Url}).
+request_page(Url) ->
+    gen_server:cast(?MODULE, {request_page, Url}).
+
+%%====================================================================
+%% External API user
+%%====================================================================
+
+save_crawler_results(Url, Links) ->
+    ph_bot:add_visited_url(Url),
+    lists:map(fun(Link) -> ph_bot:add_new_url(Link) end, Links).
 
 %%====================================================================
 %% Internal functions
@@ -64,6 +74,12 @@ handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
 
+handle_cast({request_page, Url}, State) ->
+    {ok, Page} = request_url({Url}),
+    Tokens     = parse_page({Page}),
+    Links      = fetch_links(Tokens, Url),
+    save_crawler_results(Url, Links),
+    {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -84,11 +100,13 @@ code_change(_OldVsn, State, _Extra) ->
 request_url({ Url }) ->
     {Domain,_Root,Folder,File,_Query} = parse_url({Url}),
     Result = httpc:request( Domain ++ Folder ++ File ),
-    request_url(Result);
-request_url( { ok, {{_, 200, _}, _, HtmlPage} } ) -> 
+    request_url({ Result, Url});
+request_url({ { ok, {{_, 200, _}, _, HtmlPage} }, _Url} ) -> 
     {ok, HtmlPage};
-request_url( { error, Reason } ) ->
-    {error, Reason}.
+request_url({ { error, Reason }, Url}) ->
+    {error, Reason, Url}.
+
+% {error,socket_closed_remotely}
 
 %%====================================================================
 %% Url Parsing Block
@@ -136,6 +154,18 @@ url_domain(Url) ->
     {Domain,_,_,_,_} = parse_url({Url}),
     Domain.
 
+remove_duplicates(List) ->
+    lists:reverse(lists:foldl(
+        fun(Element, Acc) ->
+            case lists:member(Element, Acc) of
+                true ->
+                    Acc;
+                false ->
+                    [Element] ++ Acc
+            end
+        end, [], List
+    )).
+
 trim_subdomains(Url) when Url =:= [] -> [];
 trim_subdomains(Url) ->
     List    = re:split(Url, "[.]", [{return,list}]),
@@ -155,7 +185,8 @@ parse_page({HtmlPage}) ->
 fetch_links(Tokens, Url) ->
     TagName = <<"a">>, 
     TagAttr = <<"href">>,
-    get_tags_attrs({Tokens, TagName, TagAttr, Url}).
+    Links = get_tags_attrs({Tokens, TagName, TagAttr, Url}),
+    remove_duplicates(Links).
 
 
 get_tags_attrs({Tokens, TagName}) ->
@@ -182,10 +213,12 @@ get_tags_attrs({Tokens, TagName, TagAttr, Url}) ->
                                     || {Tag, Value} <- TagAttrs,
                                     Tag =:= TagAttr 
                                 ],
-                % Extract Link from TagAttrs
+                % Extract Links from TagAttrs
                 case NewTagAttrs of 
                     [{_Domain,Root,Folder,_File,_Query}] when Root =:= [] ->
                         [ MainUrlDomain ++ Folder | Acc ];
+                    [{Domain,Root,Folder,_File,_Query}] when Root =:= MainUrlRoot ->
+                        [ Domain ++ Folder | Acc ];
                     _Other -> Acc
                 end;
             _Other -> Acc
@@ -214,9 +247,11 @@ get_tags_attrs({Tokens, TagName, TagAttr, Url}) ->
 
 test() ->
     Url = <<"ogo1.ru">>,
+    ph_bot:add_new_url(Url),
     {ok, Page} = ph_bot_html:request_url({Url}),
     Tokens = ph_bot_html:parse_page({Page}),
-    fetch_links(Tokens, Url).
+    Links = fetch_links(Tokens, Url),
+    save_crawler_results(Url, Links).
     % fetch_links(Tokens, Url).
     % HrefAttrTags = ph_bot_html:get_tags_attrs({Tokens, <<"a">>, <<"href">>}),
     % lists:flatten([ ph_bot_html:parse_url({TagAttrs}) || {Idx, TagName, [TagAttrs]} <- HrefAttrTags ]).

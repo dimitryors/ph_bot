@@ -45,10 +45,20 @@ stop(_State) ->
 %% API user
 %%====================================================================
 
+add_new_url(Url) when is_binary(Url) ->
+    gen_server:cast(?MODULE, {add_new_url, Url});
 add_new_url(Url) ->
-    gen_server:cast(?MODULE, {add_new_url, Url}).
+     BinUrl = binary:list_to_bin(Url),
+     gen_server:cast(?MODULE, {add_new_url, BinUrl}).
+
+
+add_visited_url(Url) when is_binary(Url) ->
+    gen_server:cast(?MODULE, {add_visited_url, Url});
 add_visited_url(Url) ->
-    gen_server:cast(?MODULE, {add_visited_url, Url}).
+     BinUrl = binary:list_to_bin(Url),
+     gen_server:cast(?MODULE, {add_visited_url, BinUrl}).
+
+
 show_urls() ->
     gen_server:call(?MODULE, {show_urls}).
 
@@ -71,12 +81,13 @@ handle_call(_Request, _From, State) ->
     {reply, Reply, State}.
 
 handle_cast({add_new_url, Url}, State) ->
-    case ets:member(new_url, Url) of
+    case ets:member(visited_url, Url) of
         true  ->
             % io:format("~n", "new url exists!"),
             NewState = State;
         false -> 
             ets:insert(new_url, {Url}),
+            ph_bot_html:request_page(Url),
             NewState = State#state{
                 new_url_counter = State#state.new_url_counter + 1
             }

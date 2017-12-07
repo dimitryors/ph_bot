@@ -6,7 +6,12 @@
   {applications,
    [kernel,
     stdlib,
-    mochiweb
+    sasl,
+	crypto,
+	ssl,
+	inets,
+    mochiweb,
+    ph_bot_html
    ]},
   {env,[]},
   {modules, []},
