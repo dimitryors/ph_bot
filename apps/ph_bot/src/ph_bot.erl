@@ -87,7 +87,7 @@ handle_cast({add_new_url, Url}, State) ->
             NewState = State;
         false -> 
             ets:insert(new_url, {Url}),
-            ph_bot_html:request_page(Url),
+            ph_bot_link:request_page(Url),
             NewState = State#state{
                 new_url_counter = State#state.new_url_counter + 1
             }

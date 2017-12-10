@@ -1,0 +1,32 @@
+{application, ph_bot_link,
+ [{description, "Price house links crawler"},
+  {vsn, "1.0"},
+  {registered, []},
+  {mod, { ph_bot_link, []}},
+  {applications,
+   [kernel,
+    stdlib,
+    mochiweb
+   ]},
+  {env,[
+        {http_header, [
+                    {"User-Agent", "Mozilla/5.0 pbbot/1.0"},
+                    {"Accept-Charset", "utf-8"},
+                    {"Accept", "application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5"},
+                    {"Accept-Language", "ru-ru,ru;q=0.8,en-us;q=0.6,en;q=0.4"}
+                ]},
+        {http_options, [
+                    {autoredirect, true}, 
+                    {timeout, 15000}
+                ]},
+        {request_options, [
+                    %{proxy, {{"proxy.mycompany.com", 80}, ["localhost"]}}
+                    %{proxy, noproxy} % erlang releases < R14A 
+                ]}
+  ]},
+  {modules, []},
+
+  {maintainers, []},
+  {licenses, ["Apache 2.0"]},
+  {links, []}
+ ]}.

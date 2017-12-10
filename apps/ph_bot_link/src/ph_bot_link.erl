@@ -3,7 +3,7 @@
 %% @end
 %%%-------------------------------------------------------------------
 
--module(ph_bot_html).
+-module(ph_bot_link).
 
 -behaviour(application).
 
@@ -40,11 +40,13 @@ start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 start(_StartType, _StartArgs) ->
-    ph_bot_html_sup:start_link().
+    ph_bot_link_sup:start_link().
 
 init([]) ->
-    {ok, Options} = application:get_env(?MODULE, web_request_options),
-    httpc:set_options(Options),
+    {ok, HttpHeader} = application:get_env(?MODULE, http_header),
+    {ok, HttpOptions} = application:get_env(?MODULE, http_options),
+    {ok, RequestOptions} = application:get_env(?MODULE, request_options),
+    httpc:set_options(RequestOptions),
     {ok, #state{}}.
 
 %%--------------------------------------------------------------------
@@ -100,9 +102,13 @@ code_change(_OldVsn, State, _Extra) ->
 request_url({ Url }) ->
     {Domain,_Root,Folder,File,_Query} = parse_url({Url}),
     Result = httpc:request( Domain ++ Folder ++ File ),
+    % httpc:request(Command, {Url,Http_header},Http_options,[{sync, false}|Request_options]) 
+    % {ok, {{_Version, 200, _ReasonPhrase}, _Headers, BodyRequest}} = httpc:request(Method, {URL, Header, Type, Body}, HTTPOptions, Options),
     request_url({ Result, Url});
 request_url({ { ok, {{_, 200, _}, _, HtmlPage} }, _Url} ) -> 
     {ok, HtmlPage};
+request_url({ { ok, {{_, OtherCode, _}, _, _} }, Url} ) -> 
+    {error, OtherCode, Url};
 request_url({ { error, Reason }, Url}) ->
     {error, Reason, Url}.
 
@@ -248,8 +254,8 @@ get_tags_attrs({Tokens, TagName, TagAttr, Url}) ->
 test() ->
     Url = <<"ogo1.ru">>,
     ph_bot:add_new_url(Url),
-    {ok, Page} = ph_bot_html:request_url({Url}),
-    Tokens = ph_bot_html:parse_page({Page}),
+    {ok, Page} = request_url({Url}),
+    Tokens = parse_page({Page}),
     Links = fetch_links(Tokens, Url),
     save_crawler_results(Url, Links).
     % fetch_links(Tokens, Url).
