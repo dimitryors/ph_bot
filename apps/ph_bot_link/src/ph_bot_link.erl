@@ -14,6 +14,7 @@
 -export([start_link/0, start/2, stop/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([request_page/1,
+         request_page_online/1,
          request_url/1,
          parse_url/1,
          url_context/1,
@@ -43,10 +44,6 @@ start(_StartType, _StartArgs) ->
     ph_bot_link_sup:start_link().
 
 init([]) ->
-    {ok, HttpHeader} = application:get_env(?MODULE, http_header),
-    {ok, HttpOptions} = application:get_env(?MODULE, http_options),
-    {ok, RequestOptions} = application:get_env(?MODULE, request_options),
-    httpc:set_options(RequestOptions),
     {ok, #state{}}.
 
 %%--------------------------------------------------------------------
@@ -60,6 +57,9 @@ stop(_State) ->
 request_page(Url) ->
     gen_server:cast(?MODULE, {request_page, Url}).
 
+request_page_online(Url) ->
+    gen_server:call(?MODULE, {request_page, Url}).
+
 %%====================================================================
 %% External API user
 %%====================================================================
@@ -72,6 +72,11 @@ save_crawler_results(Url, Links) ->
 %% Internal functions
 %%====================================================================
 
+handle_call({request_page, Url}, _From, State) ->
+    {ok, Page} = request_url({Url}),
+    Tokens     = parse_page({Page}),
+    Links      = fetch_links(Tokens, Url),
+    {reply, Links, State};
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
@@ -95,23 +100,36 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
+
+%%====================================================================
+%% Check robots.txt
+%%====================================================================
+
+
+%%====================================================================
+%% Check sitemap.xml
+%%====================================================================
+
+
 %%====================================================================
 %% Requesting Block
 %%====================================================================
 
 request_url({ Url }) ->
     {Domain,_Root,Folder,File,_Query} = parse_url({Url}),
-    Result = httpc:request( Domain ++ Folder ++ File ),
+    NewUrl = Domain ++ Folder ++ File,
+    {ok, HttpHeader} = application:get_env(?MODULE, http_header),
+    {ok, HttpOptions} = application:get_env(?MODULE, http_options),
+    {ok, RequestOptions} = application:get_env(?MODULE, request_options),
+    Result = httpc:request(get, {NewUrl, HttpHeader}, HttpOptions, RequestOptions),
     % httpc:request(Command, {Url,Http_header},Http_options,[{sync, false}|Request_options]) 
-    % {ok, {{_Version, 200, _ReasonPhrase}, _Headers, BodyRequest}} = httpc:request(Method, {URL, Header, Type, Body}, HTTPOptions, Options),
     request_url({ Result, Url});
-request_url({ { ok, {{_, 200, _}, _, HtmlPage} }, _Url} ) -> 
+request_url({ { ok, {{_Version, 200, _ReasonPhrase}, _Headers, HtmlPage} }, _Url} ) -> 
     {ok, HtmlPage};
 request_url({ { ok, {{_, OtherCode, _}, _, _} }, Url} ) -> 
     {error, OtherCode, Url};
 request_url({ { error, Reason }, Url}) ->
     {error, Reason, Url}.
-
 % {error,socket_closed_remotely}
 
 %%====================================================================
@@ -253,7 +271,7 @@ get_tags_attrs({Tokens, TagName, TagAttr, Url}) ->
 
 test() ->
     Url = <<"ogo1.ru">>,
-    ph_bot:add_new_url(Url),
+    % ph_bot:add_new_url(Url),
     {ok, Page} = request_url({Url}),
     Tokens = parse_page({Page}),
     Links = fetch_links(Tokens, Url),
