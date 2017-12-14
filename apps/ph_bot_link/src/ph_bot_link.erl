@@ -26,7 +26,9 @@
          fetch_links/2,
          remove_duplicates/1,
          save_crawler_results/2,
-         is_robotstxt_exists/1
+         is_robotstxt_exists/1,
+         is_sitemapxml_exists/1,
+         parse_robotstxt/1
          ]).
 
 %%====================================================================
@@ -240,30 +242,25 @@ get_tags_attrs({Tokens, TagName, TagAttr, Url}) ->
 is_robotstxt_exists(Url) ->
     {Domain,_Root,_Folder,_File,_Query} = parse_url({Url}),
     RobotsUrl = Domain ++ "/robots.txt",
+    case request_url({RobotsUrl}) of
+        {ok, File} -> {true, File};
+        Other      -> {false, Other}
+    end.
+
+parse_robotstxt(File) ->
+    LineSep = io_lib:nl(),
+    string:tokens(File, LineSep).
+
+
+is_sitemapxml_exists(Url) ->
+    {Domain,_Root,_Folder,_File,_Query} = parse_url({Url}),
     SitemapUrl = Domain ++ "/sitemap.xml",
-    lists:foldl(
-        fun(Item, Acc) ->
-            case Item of
-                {robots, NewUrl} ->
-                    case request_url({NewUrl}) of
-                        {ok, Page}             -> [{robots,  true} | Acc];
-                        {warning, 404, _Url}   -> [{robots, false} | Acc];
-                        {error, timeout, _Url} -> [{robots, false} | Acc];
-                        Error                  -> Error
-                    end;
-                {sitemap, NewUrl} ->
-                    case request_url({NewUrl}) of
-                        {ok, Page}             -> [{sitemap,   true} | Acc];
-                        {warning, 404, _Url}   -> [{sitemap,  false} | Acc];
-                        {error, timeout, _Url} -> [{sitemap,  false} | Acc];
-                        Error                  -> Error
-                    end
-            end
-        end,
-        [],
-        [{robots, RobotsUrl}, {sitemap, SitemapUrl}]
-    ).
-    
+    case request_url({SitemapUrl}) of
+        {ok, Page} -> true;
+        _          -> false
+    end.
+
+
 
 % get_start_tags_data(Tokens, TagName) ->
 %     Indexes = get_start_tags_indexes(Tokens, TagName),
