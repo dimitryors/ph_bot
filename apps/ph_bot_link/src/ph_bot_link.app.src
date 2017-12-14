@@ -16,8 +16,7 @@
                     {"Accept-Language", "ru-ru,ru;q=0.8,en-us;q=0.6,en;q=0.4"}
                 ]},
         {http_options, [
-                    {autoredirect, true}, 
-                    {timeout, 15000}
+                    {timeout, 5000}
                 ]},
         {request_options, [
                     %{proxy, {{"proxy.mycompany.com", 80}, ["localhost"]}}

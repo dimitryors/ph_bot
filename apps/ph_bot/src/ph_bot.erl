@@ -13,8 +13,8 @@
 %% Application callbacks
 -export([start_link/0, start/2, stop/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([add_new_url/1,
-         add_visited_url/1,
+-export([worker_new_url/1,
+         worker_visited_url/1,
          show_urls/0
          ]).
 
@@ -45,16 +45,16 @@ stop(_State) ->
 %% API user
 %%====================================================================
 
-add_new_url(Url) when is_binary(Url) ->
+worker_new_url(Url) when is_binary(Url) ->
     gen_server:cast(?MODULE, {add_new_url, Url});
-add_new_url(Url) ->
+worker_new_url(Url) ->
      BinUrl = binary:list_to_bin(Url),
      gen_server:cast(?MODULE, {add_new_url, BinUrl}).
 
 
-add_visited_url(Url) when is_binary(Url) ->
+worker_visited_url(Url) when is_binary(Url) ->
     gen_server:cast(?MODULE, {add_visited_url, Url});
-add_visited_url(Url) ->
+worker_visited_url(Url) ->
      BinUrl = binary:list_to_bin(Url),
      gen_server:cast(?MODULE, {add_visited_url, BinUrl}).
 

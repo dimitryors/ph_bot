@@ -14,7 +14,6 @@
 -export([start_link/0, start/2, stop/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([request_page/1,
-         request_page_online/1,
          request_url/1,
          parse_url/1,
          url_context/1,
@@ -27,10 +26,7 @@
          fetch_links/2,
          remove_duplicates/1,
          save_crawler_results/2,
-         test/0,
-         time_calc/0
-        %  get_start_tags_attributes/3,
-        %  get_start_tags_attributes/2
+         is_robotstxt_exists/1
          ]).
 
 %%====================================================================
@@ -57,35 +53,32 @@ stop(_State) ->
 request_page(Url) ->
     gen_server:cast(?MODULE, {request_page, Url}).
 
-request_page_online(Url) ->
-    gen_server:call(?MODULE, {request_page, Url}).
-
 %%====================================================================
 %% External API user
 %%====================================================================
 
 save_crawler_results(Url, Links) ->
-    ph_bot:add_visited_url(Url),
-    lists:map(fun(Link) -> ph_bot:add_new_url(Link) end, Links).
+    ph_bot:worker_visited_url(Url),
+    lists:map(fun(Link) -> ph_bot:worker_new_url(Link) end, Links).
 
 %%====================================================================
 %% Internal functions
 %%====================================================================
 
-handle_call({request_page, Url}, _From, State) ->
-    {ok, Page} = request_url({Url}),
-    Tokens     = parse_page({Page}),
-    Links      = fetch_links(Tokens, Url),
-    {reply, Links, State};
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
 
 handle_cast({request_page, Url}, State) ->
-    {ok, Page} = request_url({Url}),
-    Tokens     = parse_page({Page}),
-    Links      = fetch_links(Tokens, Url),
-    save_crawler_results(Url, Links),
+    case request_url({Url}) of
+        {ok, Page} ->
+            Tokens = parse_page({Page}),
+            Links  = fetch_links(Tokens, Url),
+            save_crawler_results(Url, Links);
+        {warning, OtherCode, Url} -> ok;
+        {error, Reason, Url}      -> ok;
+        _ -> ok
+    end,
     {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -99,18 +92,6 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-
-
-%%====================================================================
-%% Check robots.txt
-%%====================================================================
-
-
-%%====================================================================
-%% Check sitemap.xml
-%%====================================================================
-
-
 %%====================================================================
 %% Requesting Block
 %%====================================================================
@@ -122,12 +103,11 @@ request_url({ Url }) ->
     {ok, HttpOptions} = application:get_env(?MODULE, http_options),
     {ok, RequestOptions} = application:get_env(?MODULE, request_options),
     Result = httpc:request(get, {NewUrl, HttpHeader}, HttpOptions, RequestOptions),
-    % httpc:request(Command, {Url,Http_header},Http_options,[{sync, false}|Request_options]) 
     request_url({ Result, Url});
 request_url({ { ok, {{_Version, 200, _ReasonPhrase}, _Headers, HtmlPage} }, _Url} ) -> 
     {ok, HtmlPage};
 request_url({ { ok, {{_, OtherCode, _}, _, _} }, Url} ) -> 
-    {error, OtherCode, Url};
+    {warning, OtherCode, Url};
 request_url({ { error, Reason }, Url}) ->
     {error, Reason, Url}.
 % {error,socket_closed_remotely}
@@ -190,11 +170,11 @@ remove_duplicates(List) ->
         end, [], List
     )).
 
-trim_subdomains(Url) when Url =:= [] -> [];
-trim_subdomains(Url) ->
+trim_subdomains(Url) when Url =/= [] ->
     List    = re:split(Url, "[.]", [{return,list}]),
     Length  = length(List),
-    lists:nth(Length-1, List) ++ "." ++ lists:nth(Length, List).
+    lists:nth(Length-1, List) ++ "." ++ lists:nth(Length, List);
+trim_subdomains(Url) -> [].
 
 is_external_link(Root1, Root2) when Root1 =:= Root2 -> false;
 is_external_link(Root1, Root2) -> true.
@@ -253,6 +233,38 @@ get_tags_attrs({Tokens, TagName, TagAttr, Url}) ->
      ).
 
 
+%%====================================================================
+%% Check robots.txt
+%%====================================================================
+
+is_robotstxt_exists(Url) ->
+    {Domain,_Root,_Folder,_File,_Query} = parse_url({Url}),
+    RobotsUrl = Domain ++ "/robots.txt",
+    SitemapUrl = Domain ++ "/sitemap.xml",
+    lists:foldl(
+        fun(Item, Acc) ->
+            case Item of
+                {robots, NewUrl} ->
+                    case request_url({NewUrl}) of
+                        {ok, Page}             -> [{robots,  true} | Acc];
+                        {warning, 404, _Url}   -> [{robots, false} | Acc];
+                        {error, timeout, _Url} -> [{robots, false} | Acc];
+                        Error                  -> Error
+                    end;
+                {sitemap, NewUrl} ->
+                    case request_url({NewUrl}) of
+                        {ok, Page}             -> [{sitemap,   true} | Acc];
+                        {warning, 404, _Url}   -> [{sitemap,  false} | Acc];
+                        {error, timeout, _Url} -> [{sitemap,  false} | Acc];
+                        Error                  -> Error
+                    end
+            end
+        end,
+        [],
+        [{robots, RobotsUrl}, {sitemap, SitemapUrl}]
+    ).
+    
+
 % get_start_tags_data(Tokens, TagName) ->
 %     Indexes = get_start_tags_indexes(Tokens, TagName),
 %     DeepList = lists:foldl(
@@ -268,31 +280,3 @@ get_tags_attrs({Tokens, TagName, TagAttr, Url}) ->
 % 		 [],
 % 		 Indexes),
 %     lists:flatten(DeepList).
-
-test() ->
-    Url = <<"ogo1.ru">>,
-    % ph_bot:add_new_url(Url),
-    {ok, Page} = request_url({Url}),
-    Tokens = parse_page({Page}),
-    Links = fetch_links(Tokens, Url),
-    save_crawler_results(Url, Links).
-    % fetch_links(Tokens, Url).
-    % HrefAttrTags = ph_bot_html:get_tags_attrs({Tokens, <<"a">>, <<"href">>}),
-    % lists:flatten([ ph_bot_html:parse_url({TagAttrs}) || {Idx, TagName, [TagAttrs]} <- HrefAttrTags ]).
-
-time_calc() -> 
-    Url = <<"ogo1.ru">>,
-    {PageM, {ok, Page}} = timer:tc(?MODULE, request_url, [{Url}]),
-    SizePage = length(Page),
-    {TokensM, Tokens} = timer:tc(?MODULE, parse_page, [{Page}]),
-    SizeTokens = length(Tokens),
-    {FetchM, Links} = timer:tc(?MODULE, fetch_links, [Tokens, Url]),
-    SizeLinks = length(Links),
-    % {FetchM, FetchUrls} = timer:tc(?MODULE, fetch_links, [Tokens, Url]),
-    % SizeFetchUrls = length(FetchUrls),
-    #{
-        request_url => PageM/SizePage,
-        parse_page  => TokensM/SizeTokens,
-        fetch_links => FetchM/SizeLinks,
-        total       => PageM/SizePage + TokensM/SizeTokens + FetchM/SizeLinks
-    }.
