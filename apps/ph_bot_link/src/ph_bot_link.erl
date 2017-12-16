@@ -248,8 +248,14 @@ is_robotstxt_exists(Url) ->
     end.
 
 parse_robotstxt(File) ->
+    % Separator by NewLine
     LineSep = io_lib:nl(),
-    string:tokens(File, LineSep).
+    % Devide file string By new line
+    TokensList = string:tokens(File, LineSep),
+    % Each line in List separate by ": " and convert to tuple
+    List = [ list_to_tuple(string:tokens(Token, ": ")) || Token <- TokensList ],
+    % Index list's elements
+    IndexList = lists:zip(lists:seq(1, length(List)), List ).
 
 
 is_sitemapxml_exists(Url) ->
