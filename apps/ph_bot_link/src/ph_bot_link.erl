@@ -28,7 +28,8 @@
          save_crawler_results/2,
          is_robotstxt_exists/1,
          is_sitemapxml_exists/1,
-         parse_robotstxt/1
+         parse_robotstxt/1,
+         which_useragent_use/1
          ]).
 
 %%====================================================================
@@ -254,8 +255,48 @@ parse_robotstxt(File) ->
     TokensList = string:tokens(File, LineSep),
     % Each line in List separate by ": " and convert to tuple
     List = [ list_to_tuple(string:tokens(Token, ": ")) || Token <- TokensList ],
+    % {ok, UserAgent} = which_useragent_use(List),
     % Index list's elements
-    IndexList = lists:zip(lists:seq(1, length(List)), List ).
+    index_robottxt_by_useragent({List}).
+
+index_robottxt_by_useragent({List}) ->
+    DefIndex = "zero",
+    index_robottxt_by_useragent({List, DefIndex, []});
+
+index_robottxt_by_useragent({[H|T], Index, Acc}) ->
+    case H of
+        {Key,NewIndex} when Key =:= "User-Agent"; Key =:= "User-agent"; Key =:= "user-Agent"; Key =:= "user-agent"  ->
+            index_robottxt_by_useragent({ T, NewIndex, [ {NewIndex,H} | Acc ] });
+        _Other ->
+            index_robottxt_by_useragent({ T, Index, [ {Index,H} | Acc ] })
+    end;
+index_robottxt_by_useragent({[], _DefIndex, Acc}) -> lists:reverse(Acc).
+
+    
+
+% get_userafent_block({IndexList}) ->
+%     get_userafent_block({IndexList, []});
+% get_userafent_block({[H|T]], Acc}) ->
+%     case H of
+%         {"User-Agent","*"} -> 
+%     end
+
+
+which_useragent_use(List) ->
+    % Find "pbbot" user agent rules
+    case lists:member({"User-Agent","pbbot"},List) of
+        % If "pbbot" exist return it
+        true -> {ok, {"User-Agent","pbbot"}};
+        % else find common "*" user agent rules
+        false ->
+            case lists:member({"User-Agent","*"},List) of
+                % If "*" exist return it           
+                true -> {ok, {"User-Agent","*"}};
+                 % else return error
+                false -> {error, "Common User-Agent rules doesn't exist"}
+            end
+    end.
+
 
 
 is_sitemapxml_exists(Url) ->
