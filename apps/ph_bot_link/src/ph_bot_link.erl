@@ -235,7 +235,6 @@ get_tags_attrs({Tokens, TagName, TagAttr, Url}) ->
       Tokens
      ).
 
-
 %%====================================================================
 %% Check robots.txt
 %%====================================================================
@@ -254,10 +253,26 @@ parse_robotstxt(File) ->
     % Devide file string By new line
     TokensList = string:tokens(File, LineSep),
     % Each line in List separate by ": " and convert to tuple
-    List = [ list_to_tuple(string:tokens(Token, ": ")) || Token <- TokensList ],
-    % {ok, UserAgent} = which_useragent_use(List),
+    List =  lists:reverse(
+                lists:foldl(
+                    fun(Token,Acc) ->
+                        TokenTuple = list_to_tuple(string:tokens(Token, ": ")),
+                        case TokenTuple of
+                            {Key,Value} -> [ { string:lowercase(Key), Value } | Acc ];
+                            {Key,Value1,Value2} -> [ { string:lowercase(Key), Value1, Value2 } | Acc ];
+                            _Other -> Acc
+                        end
+                    end,
+                    [],
+                    TokensList
+                )
+            ),
+    {ok, {"user-agent",RequredUserAgent}} = which_useragent_use(List),
     % Index list's elements
-    index_robottxt_by_useragent({List}).
+    IndexedList = index_robottxt_by_useragent({List}),
+    % Return only RequredUserAgent block
+    [ KV || {Index,KV} <- IndexedList, Index =:= RequredUserAgent ].
+
 
 index_robottxt_by_useragent({List}) ->
     DefIndex = "zero",
@@ -265,40 +280,33 @@ index_robottxt_by_useragent({List}) ->
 
 index_robottxt_by_useragent({[H|T], Index, Acc}) ->
     case H of
-        {Key,NewIndex} when Key =:= "User-Agent"; Key =:= "User-agent"; Key =:= "user-Agent"; Key =:= "user-agent"  ->
+        {Key,Value} when Key =:= "user-agent"  ->
+            NewIndex = string:lowercase(Value),
             index_robottxt_by_useragent({ T, NewIndex, [ {NewIndex,H} | Acc ] });
         _Other ->
             index_robottxt_by_useragent({ T, Index, [ {Index,H} | Acc ] })
     end;
 index_robottxt_by_useragent({[], _DefIndex, Acc}) -> lists:reverse(Acc).
 
-    
-
-% get_userafent_block({IndexList}) ->
-%     get_userafent_block({IndexList, []});
-% get_userafent_block({[H|T]], Acc}) ->
-%     case H of
-%         {"User-Agent","*"} -> 
-%     end
-
 
 which_useragent_use(List) ->
     % Find "pbbot" user agent rules
-    case lists:member({"User-Agent","pbbot"},List) of
+    case lists:member({"user-agent","pbbot"},List) of
         % If "pbbot" exist return it
-        true -> {ok, {"User-Agent","pbbot"}};
+        true -> {ok, {"user-agent","pbbot"}};
         % else find common "*" user agent rules
         false ->
-            case lists:member({"User-Agent","*"},List) of
+            case lists:member({"user-agent","*"},List) of
                 % If "*" exist return it           
-                true -> {ok, {"User-Agent","*"}};
+                true -> {ok, {"user-agent","*"}};
                  % else return error
                 false -> {error, "Common User-Agent rules doesn't exist"}
             end
     end.
 
-
-
+%%====================================================================
+%% Check sitemap.xml
+%%====================================================================
 is_sitemapxml_exists(Url) ->
     {Domain,_Root,_Folder,_File,_Query} = parse_url({Url}),
     SitemapUrl = Domain ++ "/sitemap.xml",
@@ -306,21 +314,3 @@ is_sitemapxml_exists(Url) ->
         {ok, Page} -> true;
         _          -> false
     end.
-
-
-
-% get_start_tags_data(Tokens, TagName) ->
-%     Indexes = get_start_tags_indexes(Tokens, TagName),
-%     DeepList = lists:foldl(
-% 		 fun(Index, Results) ->
-% 			 case lists:nth(Index + 1, Tokens) of
-% 			     {data, Data, _Whitespace} ->
-% 				 [Data|Results];
-% 			     _Else ->
-% 				 error_logger:warning_report({?MODULE, ?LINE, {get_start_tags_data, data_token_notFound}}),
-% 				 Results
-% 			 end
-% 		 end,
-% 		 [],
-% 		 Indexes),
-%     lists:flatten(DeepList).
