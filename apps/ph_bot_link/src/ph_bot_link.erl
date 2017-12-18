@@ -29,7 +29,8 @@
          is_robotstxt_exists/1,
          is_sitemapxml_exists/1,
          parse_robotstxt/1,
-         which_useragent_use/1
+         which_useragent_use/1,
+         get_sitemapxml/1
          ]).
 
 %%====================================================================
@@ -256,10 +257,10 @@ parse_robotstxt(File) ->
     List =  lists:reverse(
                 lists:foldl(
                     fun(Token,Acc) ->
-                        TokenTuple = list_to_tuple(string:tokens(Token, ": ")),
+                        TokenTuple = list_to_tuple(string:tokens(Token, ":")),
                         case TokenTuple of
-                            {Key,Value}         -> [ { string:lowercase(Key), Value } | Acc ];
-                            {Key,Value1,Value2} -> [ { string:lowercase(Key), Value1, Value2 } | Acc ];
+                            {Key,Value}         -> [ { string:lowercase(Key), string:trim(Value) } | Acc ];
+                            {Key,Value1,Value2} -> [ { string:lowercase(Key), string:trim(Value1), string:trim(Value2) } | Acc ];
                             _Other              -> Acc
                         end
                     end,
@@ -307,6 +308,26 @@ which_useragent_use(List) ->
                 false -> {error, "Common User-Agent rules doesn't exist"}
             end
     end.
+
+get_sitemapxml({Url}) ->
+    get_sitemapxml( 
+        is_robotstxt_exists(Url)
+    );
+get_sitemapxml({true, File}) ->
+    ListRobotstxt = parse_robotstxt(File),
+    lists:foldl(
+        fun(Idx, Acc) ->
+            case Idx of
+               {"sitemap", SUrl}           ->  [ SUrl | Acc ];
+               {"sitemap", Protocol, SUrl} ->  [ Protocol ++ SUrl | Acc ];
+               _Other                     ->  Acc
+            end
+        end,
+        [],
+        ListRobotstxt
+    );
+get_sitemapxml({false, Other}) ->
+    {error, Other}.
 
 %%====================================================================
 %% Check sitemap.xml
