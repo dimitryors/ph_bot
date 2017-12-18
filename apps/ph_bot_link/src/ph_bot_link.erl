@@ -78,8 +78,8 @@ handle_cast({request_page, Url}, State) ->
             Tokens = parse_page({Page}),
             Links  = fetch_links(Tokens, Url),
             save_crawler_results(Url, Links);
-        {warning, OtherCode, Url} -> ok;
-        {error, Reason, Url}      -> ok;
+        {warning, _OtherCode, _Url} -> ok;
+        {error, _Reason, _Url}      -> ok;
         _ -> ok
     end,
     {noreply, State};
@@ -177,17 +177,17 @@ trim_subdomains(Url) when Url =/= [] ->
     List    = re:split(Url, "[.]", [{return,list}]),
     Length  = length(List),
     lists:nth(Length-1, List) ++ "." ++ lists:nth(Length, List);
-trim_subdomains(Url) -> [].
+trim_subdomains(_Url) -> [].
 
 is_external_link(Root1, Root2) when Root1 =:= Root2 -> false;
-is_external_link(Root1, Root2) -> true.
+is_external_link(_Root1, _Root2) -> true.
 
 %%====================================================================
 %% Page Parsing Block
 %%====================================================================
 
 parse_page({HtmlPage}) ->
-    Tokens = mochiweb_html:tokens(HtmlPage).
+    mochiweb_html:tokens(HtmlPage).
 
 fetch_links(Tokens, Url) ->
     TagName = <<"a">>, 
@@ -252,26 +252,30 @@ parse_robotstxt(File) ->
     LineSep = io_lib:nl(),
     % Devide file string By new line
     TokensList = string:tokens(File, LineSep),
-    % Each line in List separate by ": " and convert to tuple
+    % Each line in List separate by ": " and convert to tuple, convert key to lowercase
     List =  lists:reverse(
                 lists:foldl(
                     fun(Token,Acc) ->
                         TokenTuple = list_to_tuple(string:tokens(Token, ": ")),
                         case TokenTuple of
-                            {Key,Value} -> [ { string:lowercase(Key), Value } | Acc ];
+                            {Key,Value}         -> [ { string:lowercase(Key), Value } | Acc ];
                             {Key,Value1,Value2} -> [ { string:lowercase(Key), Value1, Value2 } | Acc ];
-                            _Other -> Acc
+                            _Other              -> Acc
                         end
                     end,
                     [],
                     TokensList
                 )
             ),
-    {ok, {"user-agent",RequredUserAgent}} = which_useragent_use(List),
-    % Index list's elements
-    IndexedList = index_robottxt_by_useragent({List}),
-    % Return only RequredUserAgent block
-    [ KV || {Index,KV} <- IndexedList, Index =:= RequredUserAgent ].
+    case which_useragent_use(List) of
+        {ok, {"user-agent",RequredUserAgent}} ->
+            % Index list's elements
+            IndexedList = index_robottxt_by_useragent({List}),
+            % Return only RequredUserAgent block
+            [ KV || {Index,KV} <- IndexedList, Index =:= RequredUserAgent ];
+        {error, Reason} -> {error, Reason, which_useragent_use}
+    end.
+        
 
 
 index_robottxt_by_useragent({List}) ->
@@ -311,6 +315,6 @@ is_sitemapxml_exists(Url) ->
     {Domain,_Root,_Folder,_File,_Query} = parse_url({Url}),
     SitemapUrl = Domain ++ "/sitemap.xml",
     case request_url({SitemapUrl}) of
-        {ok, Page} -> true;
-        _          -> false
+        {ok, _Page} -> true;
+        _           -> false
     end.
