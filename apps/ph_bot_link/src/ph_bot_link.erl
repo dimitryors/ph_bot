@@ -30,7 +30,7 @@
          is_sitemapxml_exists/1,
          parse_robotstxt/1,
          which_useragent_use/1,
-         get_sitemapxml/1
+         get_sitemapxml_from_robotstxt/1
          ]).
 
 %%====================================================================
@@ -101,8 +101,8 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 
 request_url({ Url }) ->
-    {Domain,_Root,Folder,File,_Query} = parse_url({Url}),
-    NewUrl = Domain ++ Folder ++ File,
+    {Domain,_Root,Folder,File,Query} = parse_url({Url}),
+    NewUrl = Domain ++ Folder ++ File ++ Query,
     {ok, HttpHeader} = application:get_env(?MODULE, http_header),
     {ok, HttpOptions} = application:get_env(?MODULE, http_options),
     {ok, RequestOptions} = application:get_env(?MODULE, request_options),
@@ -309,33 +309,41 @@ which_useragent_use(List) ->
             end
     end.
 
-get_sitemapxml({Url}) ->
-    get_sitemapxml( 
+get_sitemapxml_from_robotstxt({Url}) ->
+    get_sitemapxml_from_robotstxt( 
         is_robotstxt_exists(Url)
     );
-get_sitemapxml({true, File}) ->
+get_sitemapxml_from_robotstxt({true, File}) ->
     ListRobotstxt = parse_robotstxt(File),
     lists:foldl(
         fun(Idx, Acc) ->
             case Idx of
                {"sitemap", SUrl}           ->  [ SUrl | Acc ];
-               {"sitemap", Protocol, SUrl} ->  [ Protocol ++ SUrl | Acc ];
-               _Other                     ->  Acc
+               {"sitemap", Protocol, SUrl} ->  [ Protocol ++ ":" ++ SUrl | Acc ];
+               _Other                      ->  Acc
             end
         end,
         [],
         ListRobotstxt
     );
-get_sitemapxml({false, Other}) ->
+get_sitemapxml_from_robotstxt({false, Other}) ->
     {error, Other}.
 
 %%====================================================================
 %% Check sitemap.xml
 %%====================================================================
 is_sitemapxml_exists(Url) ->
-    {Domain,_Root,_Folder,_File,_Query} = parse_url({Url}),
-    SitemapUrl = Domain ++ "/sitemap.xml",
-    case request_url({SitemapUrl}) of
-        {ok, _Page} -> true;
-        _           -> false
+    case get_sitemapxml_from_robotstxt({Url}) of
+        [H|_T] ->
+            case request_url({H}) of
+                {ok, Xml} -> {true, in_robots, Xml};
+                Other     -> {false, in_robots, Other}
+            end;
+        [] ->
+            {Domain,_Root,_Folder,_File,_Query} = parse_url({Url}),
+            SitemapUrl = Domain ++ "/sitemap.xml",
+            case request_url({SitemapUrl}) of
+                {ok, Xml} when Xml =/= [] -> {true, by_direct, Xml};
+                Other                     -> {false, by_direct, Other}
+            end
     end.
