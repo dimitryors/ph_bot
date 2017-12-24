@@ -316,7 +316,7 @@ groupby_robotstxt({RequredUA, [H|T], Acc}) ->
         {UA, KV} when UA =:= RequredUA ->
             case KV of
                 % If KV is tuple like {Key, Value} do
-                {Key, Value} when Value =:= RequredUA ->
+                {Key, Value} when Value =:= RequredUA orelse Key =:= "crawl-delay" ->
                     groupby_robotstxt({RequredUA, T, [ {Key, Value} | Acc]});
                 {Key, Value} ->
                     % Try find Key in Accumulator
@@ -351,9 +351,9 @@ get_sitemapxml({Url}) ->
 get_sitemapxml({true, File}) ->
     MapRobotstxt = parse_robotstxt(File),
     case maps:get("sitemap",MapRobotstxt) of
+        {badkey,_} -> {error, nositemap};
         [Url]      -> {ok, Url};
-         Url       -> {ok, Url};
-        {badkey,_} -> {error, nositemap} 
+        Url        -> {ok, Url}
     end;
 get_sitemapxml({false, Other}) ->
     {error, Other}.
