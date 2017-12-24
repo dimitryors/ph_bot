@@ -28,9 +28,7 @@
          save_crawler_results/2,
          is_robotstxt_exists/1,
          is_sitemapxml_exists/1,
-         parse_robotstxt/1,
-         which_useragent_use/1,
-         get_sitemapxml_from_robotstxt/1
+         parse_robotstxt/1
          ]).
 
 %%====================================================================
@@ -269,11 +267,11 @@ parse_robotstxt(File) ->
                 )
             ),
     case which_useragent_use(List) of
-        {ok, {"user-agent",RequredUserAgent}} ->
+        {ok, {"user-agent",RequredUA}} ->
             % Index list's elements
-            IndexedList = index_robottxt_by_useragent({List}),
+            IndexedListByUA = index_robottxt_by_useragent({List}),
             % Return only RequredUserAgent block
-            [ KV || {Index,KV} <- IndexedList, Index =:= RequredUserAgent ];
+            groupby_robotstxt({RequredUA, IndexedListByUA});
         {error, Reason} -> {error, Reason, which_useragent_use}
     end.
         
@@ -309,41 +307,77 @@ which_useragent_use(List) ->
             end
     end.
 
-get_sitemapxml_from_robotstxt({Url}) ->
-    get_sitemapxml_from_robotstxt( 
+groupby_robotstxt({RequredUA, IndexedListByUA}) ->
+    groupby_robotstxt({RequredUA, IndexedListByUA, []});
+groupby_robotstxt({RequredUA, [H|T], Acc}) ->
+    % Case Head of List
+    case H of
+        % If Head is tuple like {UA, KV} do
+        {UA, KV} when UA =:= RequredUA ->
+            case KV of
+                % If KV is tuple like {Key, Value} do
+                {Key, Value} when Value =:= RequredUA ->
+                    groupby_robotstxt({RequredUA, T, [ {Key, Value} | Acc]});
+                {Key, Value} ->
+                    % Try find Key in Accumulator
+                    case lists:keyfind(Key,1,Acc) of
+                        % If Key doesn't exists in Accumulator add {Key, [Value]} to it
+                        false                 -> groupby_robotstxt({RequredUA, T, [ {Key, [Value]} | Acc]});
+                        {KeyExist,ValueExist} ->
+                            % Else Delete Key from Accumulator and expand Value Array for same Key and Add New to Acc
+                            AccWithoutKey = lists:keydelete(KeyExist,1,Acc),
+                            groupby_robotstxt({RequredUA, T, [ {Key, [Value | ValueExist]} | AccWithoutKey ]})
+                    end
+                    % groupby_robotstxt({RequredUA, T, [ {Key, Value} | Acc]});
+                    ;
+                {Key, Protocol, Url} when Protocol =:= "https" orelse Protocol =:= "http" ->
+                    groupby_robotstxt({RequredUA, T, [ {Key, Protocol ++ ":" ++ Url} | Acc]})
+                    ;
+                % Else do next
+                _Other       -> groupby_robotstxt({RequredUA, T, Acc})
+            end
+            ;
+        % Else do next
+        _Other          -> groupby_robotstxt({RequredUA, T, Acc})
+    end;
+groupby_robotstxt({RequredUA, [], Acc}) -> 
+    maps:from_list(Acc).
+
+    
+get_sitemapxml({Url}) ->
+    get_sitemapxml( 
         is_robotstxt_exists(Url)
     );
-get_sitemapxml_from_robotstxt({true, File}) ->
-    ListRobotstxt = parse_robotstxt(File),
-    lists:foldl(
-        fun(Idx, Acc) ->
-            case Idx of
-               {"sitemap", SUrl}           ->  [ SUrl | Acc ];
-               {"sitemap", Protocol, SUrl} ->  [ Protocol ++ ":" ++ SUrl | Acc ];
-               _Other                      ->  Acc
-            end
-        end,
-        [],
-        ListRobotstxt
-    );
-get_sitemapxml_from_robotstxt({false, Other}) ->
+get_sitemapxml({true, File}) ->
+    MapRobotstxt = parse_robotstxt(File),
+    case maps:get("sitemap",MapRobotstxt) of
+        [Url]      -> {ok, Url};
+         Url       -> {ok, Url};
+        {badkey,_} -> {error, nositemap} 
+    end;
+get_sitemapxml({false, Other}) ->
     {error, Other}.
 
 %%====================================================================
 %% Check sitemap.xml
 %%====================================================================
-is_sitemapxml_exists(Url) ->
-    case get_sitemapxml_from_robotstxt({Url}) of
-        [H|_T] ->
-            case request_url({H}) of
-                {ok, Xml} -> {true, in_robots, Xml};
-                Other     -> {false, in_robots, Other}
-            end;
-        [] ->
-            {Domain,_Root,_Folder,_File,_Query} = parse_url({Url}),
-            SitemapUrl = Domain ++ "/sitemap.xml",
-            case request_url({SitemapUrl}) of
-                {ok, Xml} when Xml =/= [] -> {true, by_direct, Xml};
-                Other                     -> {false, by_direct, Other}
-            end
-    end.
+is_sitemapxml_exists({Url}) ->
+    is_sitemapxml_exists(
+        {get_sitemapxml({Url}), Url}
+    );
+is_sitemapxml_exists({{ok,Url}, _Url}) ->
+    case request_url({Url}) of
+        {ok, Xml} -> {true, Xml};
+        Other     -> {false, Other}
+    end
+    ;
+is_sitemapxml_exists({{error,nositemap}, Url}) ->
+    {Domain,_Root,_Folder,_File,_Query} = parse_url({Url}),
+    SitemapUrl = Domain ++ "/sitemap.xml",
+    case request_url({SitemapUrl}) of
+        {ok, Xml} when Xml =/= [] -> {true, Xml};
+        Other                     -> {false, Other}
+    end
+    ;
+is_sitemapxml_exists({{error,_Other}, _Url}) ->
+    {false, is_robotstxt_existsis_error}.
