@@ -198,20 +198,6 @@ fetch_links(Tokens, Url) ->
     Links = get_tags_attrs({Tokens, TagName, TagAttr, Url}),
     remove_duplicates(Links).
 
-
-get_tags_attrs({Tokens, TagName}) ->
-    lists:foldl(
-      fun(Idx, Acc) -> 
-	      Token = lists:nth(Idx, Tokens),
-	      case Token of 
-            {start_tag, TagName, TagAttrs, _} ->
-                [ {Idx, TagName, TagAttrs} | Acc ];
-            _Other -> Acc
-	      end
-      end,
-      [], 
-      lists:seq(1, length(Tokens))
-     );
 get_tags_attrs({Tokens, TagName, TagAttr, Url}) ->
     {MainUrlDomain,MainUrlRoot,_Folder,_File,_Query} = parse_url({Url}),
     lists:foldl(
@@ -319,16 +305,20 @@ groupby_robotstxt({RequredUA, [H|T], Acc}) ->
         % If Head is tuple like {UA, KV} do
         {UA, KV} when UA =:= RequredUA ->
             case KV of
-                % If KV is tuple like {Key, Value} do
+                % If KV is tuple like {Key, Value} and Key is "crawl-delay" or Value is Required User agent 
+                % just add {Key, Value} to Accumulator
                 {Key, Value} when Value =:= RequredUA orelse Key =:= "crawl-delay" ->
                     groupby_robotstxt({RequredUA, T, [ {Key, Value} | Acc]});
+                % Else do aditional actions
                 {Key, Value} ->
                     % Try find Key in Accumulator
                     case lists:keyfind(Key,1,Acc) of
-                        % If Key doesn't exists in Accumulator add {Key, [Value]} to it
+                        % If Key doesn't exists in Accumulator just add {Key, [Value]} to it
                         false                 -> groupby_robotstxt({RequredUA, T, [ {Key, [Value]} | Acc]});
+                        % Else key exists
                         {KeyExist,ValueExist} ->
-                            % Else Delete Key from Accumulator and expand Value Array for same Key and Add New to Acc
+                            % We need Delete this Key from Accumulator and add current Value to ValueExist List
+                            % Add same changed Key like [ {Key, [Value | ValueExist]} | AccWithoutKey ] to Accumulator without Key
                             AccWithoutKey = lists:keydelete(KeyExist,1,Acc),
                             groupby_robotstxt({RequredUA, T, [ {Key, [Value | ValueExist]} | AccWithoutKey ]})
                     end
@@ -355,10 +345,8 @@ get_sitemapxml({Url}) ->
 get_sitemapxml({true, File}) ->
     MapRobotstxt = parse_robotstxt(File),
     try maps:get("sitemap",MapRobotstxt) of
-        Url                -> {ok, Url}
+        Url         -> {ok, Url}
     catch
-        % {badkey,"sitemap"} -> {error, nositemap}
-        % [Url]      -> {ok, Url};
         error:Error -> {error, Error}
     end;
 get_sitemapxml({false, Other}) ->
