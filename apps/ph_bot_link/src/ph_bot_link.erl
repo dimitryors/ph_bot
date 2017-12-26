@@ -28,7 +28,9 @@
          save_crawler_results/2,
          is_robotstxt_exists/1,
          is_sitemapxml_exists/1,
-         parse_robotstxt/1
+         parse_robotstxt/1,
+         parse_sitemapxml/1,
+         which_sitemap_type/1
          ]).
 
 %%====================================================================
@@ -350,10 +352,12 @@ get_sitemapxml({Url}) ->
     );
 get_sitemapxml({true, File}) ->
     MapRobotstxt = parse_robotstxt(File),
-    case maps:get("sitemap",MapRobotstxt) of
-        {badkey,_} -> {error, nositemap};
-        [Url]      -> {ok, Url};
-        Url        -> {ok, Url}
+    try maps:get("sitemap",MapRobotstxt) of
+        Url                -> {ok, Url}
+    catch
+        % {badkey,"sitemap"} -> {error, nositemap}
+        % [Url]      -> {ok, Url};
+        error:Error -> {error, Error}
     end;
 get_sitemapxml({false, Other}) ->
     {error, Other}.
@@ -364,14 +368,15 @@ get_sitemapxml({false, Other}) ->
 is_sitemapxml_exists({Url}) ->
     is_sitemapxml_exists(
         {get_sitemapxml({Url}), Url}
-    );
+    )
+    ;
 is_sitemapxml_exists({{ok,Url}, _Url}) ->
     case request_url({Url}) of
         {ok, Xml} -> {true, Xml};
         Other     -> {false, Other}
     end
     ;
-is_sitemapxml_exists({{error,nositemap}, Url}) ->
+is_sitemapxml_exists({{error,{badkey,"sitemap"}}, Url}) ->
     {Domain,_Root,_Folder,_File,_Query} = parse_url({Url}),
     SitemapUrl = Domain ++ "/sitemap.xml",
     case request_url({SitemapUrl}) of
@@ -381,3 +386,29 @@ is_sitemapxml_exists({{error,nositemap}, Url}) ->
     ;
 is_sitemapxml_exists({{error,_Other}, _Url}) ->
     {false, is_robotstxt_existsis_error}.
+
+parse_sitemapxml(File) ->
+    XmlTokens = mochiweb_html:tokens(File),
+    try which_sitemap_type(XmlTokens) of
+        [{type, sitemapindex}] -> sitemapindex;
+        [{type, urlset}]       -> urlset;
+        []                     -> {error, notypes}
+    catch
+        error:Error            -> {error, Error}
+    end.
+
+which_sitemap_type(XmlTokens) ->
+    lists:foldl(
+        fun(Tag, Acc) ->
+            case Tag of
+                {start_tag,<<"sitemapindex">>, _, _} -> [{type, sitemapindex} | Acc];
+                {start_tag,<<"urlset">>, _, _}       -> [{type, urlset} | Acc];
+                _Other                               -> Acc
+
+            end
+        end,
+        [],
+        XmlTokens
+    ).
+
+
