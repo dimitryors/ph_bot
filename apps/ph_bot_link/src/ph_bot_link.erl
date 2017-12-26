@@ -30,7 +30,9 @@
          is_sitemapxml_exists/1,
          parse_robotstxt/1,
          parse_sitemapxml/1,
-         which_sitemap_type/1
+         which_sitemap_type/1,
+         parse_urlset/1,
+         parse_sitemapindex/1
          ]).
 
 %%====================================================================
@@ -342,7 +344,7 @@ groupby_robotstxt({RequredUA, [H|T], Acc}) ->
         % Else do next
         _Other          -> groupby_robotstxt({RequredUA, T, Acc})
     end;
-groupby_robotstxt({RequredUA, [], Acc}) -> 
+groupby_robotstxt({_RequredUA, [], Acc}) -> 
     maps:from_list(Acc).
 
     
@@ -390,8 +392,8 @@ is_sitemapxml_exists({{error,_Other}, _Url}) ->
 parse_sitemapxml(File) ->
     XmlTokens = mochiweb_html:tokens(File),
     try which_sitemap_type(XmlTokens) of
-        [{type, sitemapindex}] -> sitemapindex;
-        [{type, urlset}]       -> urlset;
+        [{type, sitemapindex}] -> parse_sitemapindex({XmlTokens});
+        [{type, urlset}]       -> parse_urlset({XmlTokens});
         []                     -> {error, notypes}
     catch
         error:Error            -> {error, Error}
@@ -411,4 +413,38 @@ which_sitemap_type(XmlTokens) ->
         XmlTokens
     ).
 
+parse_urlset({XmlTokens}) ->
+    State = noprocess,
+    parse_urlset({XmlTokens, State, []});
+parse_urlset({[Token|XmlTokens], State, Acc}) ->
+    case Token of
+        {start_tag,<<"loc">>,_,_} when State =:= noprocess ->
+            NewState = process,
+            parse_urlset({XmlTokens, NewState, Acc});
+        {data,Url,_} when State =:= process ->
+            NewState = noprocess,
+            parse_urlset({XmlTokens, NewState, [ Url | Acc ] });
+        _Other ->
+            parse_urlset({XmlTokens, State, Acc})
+    end;
+parse_urlset({[], _State, Acc}) -> Acc.
+
+parse_sitemapindex({XmlTokens}) ->
+    State = noprocess,
+    parse_sitemapindex({XmlTokens, State, []});
+parse_sitemapindex({[Token|XmlTokens], State, Acc}) ->
+    case Token of
+        {start_tag,<<"loc">>,_,_} when State =:= noprocess ->
+            NewState = process,
+            parse_sitemapindex({XmlTokens, NewState, Acc});
+        {data,Url,_} when State =:= process ->
+            NewState = noprocess,
+            {ok, Xml} = request_url({Url}),
+            NewXmlTokens = mochiweb_html:tokens(Xml),
+            Urlset = parse_urlset({NewXmlTokens}),
+            parse_sitemapindex({XmlTokens, NewState, Urlset ++ Acc });
+        _Other ->
+            parse_sitemapindex({XmlTokens, State, Acc})
+    end;
+parse_sitemapindex({[], _State, Acc}) -> Acc.
 
